@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Environnements et outils
+.venv/
+venv/
+.idea/
+.vscode/
+
+# Builds
+build/
+dist/
+*.spec
+*.exe
+
+# Fichiers de jeux et sorties générées
+*.tac
+*.tac.bak
+*.partial
+*_extracted/
+traduction_txt/
+datascn_fr.tac/
+_tanuki_tools_manifest.json
+_t07_manifest.json
+.tanuki_tools_images.json
+.t07_images.json
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini

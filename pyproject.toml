@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tanuki-tools"
+version = "0.2.0"
+description = "GUI tools for translating CSV scripts and extracting/rebuilding TanukiSoft TArc archives"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Pillow>=12.0",
+    "pycryptodome>=3.23",
+]
+keywords = ["visual-novel", "translation", "tanukisoft", "tarc", "tac"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Win32 (MS Windows)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Games/Entertainment",
+]
+
+[project.gui-scripts]
+tanuki-tools = "tanuki_tools.app:run"
+
+[tool.setuptools]
+packages = ["tanuki_tools"]
+
+[tool.setuptools.package-data]
+tanuki_tools = ["resources/tanuki.lst"]

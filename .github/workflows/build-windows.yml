@@ -1,0 +1,31 @@
+name: Build Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build
+        shell: pwsh
+        run: .\build.ps1
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: TanukiTools-Windows
+          path: dist/TanukiTools.exe
+          if-no-files-found: error
