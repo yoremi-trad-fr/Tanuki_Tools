@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import queue
 import sys
 import threading
@@ -14,6 +15,25 @@ from .tac_tools import OperationCancelled, TacArchive, TacError
 
 
 APP_TITLE = "Tanuki Tools"
+SETTINGS_DIRECTORY = "TanukiTools"
+SETTINGS_FILENAME = "settings.json"
+
+
+def settings_path() -> Path:
+    appdata = os.environ.get("APPDATA")
+    base = Path(appdata) if appdata else Path.home() / ".config"
+    return base / SETTINGS_DIRECTORY / SETTINGS_FILENAME
+
+
+def load_settings(path: Path | None = None) -> dict[str, object]:
+    source = path or settings_path()
+    if not source.is_file():
+        return {}
+    try:
+        data = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def find_game_folder() -> Path:
@@ -37,7 +57,9 @@ class TanukiToolsApp(tk.Tk):
         self.geometry("1040x780")
         self.minsize(900, 680)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.base_folder = find_game_folder()
+        self.settings_file = settings_path()
+        self.settings = load_settings(self.settings_file)
+        self.base_folder = self._last_existing_folder()
         self.script_infos = []
         self.archive: TacArchive | None = None
         self.job_running = False
@@ -46,7 +68,63 @@ class TanukiToolsApp(tk.Tk):
         self._configure_style()
         self._build_ui()
         self.after(100, self._poll_events)
-        self.after(250, self.analyse_csv)
+        if self.csv_source_var.get().strip() and Path(self.csv_source_var.get()).is_dir():
+            self.after(250, self.analyse_csv)
+
+    def _saved_path(self, key: str) -> str:
+        value = self.settings.get(key, "")
+        return value if isinstance(value, str) else ""
+
+    def _last_existing_folder(self) -> Path:
+        for key in (
+            "csv_source",
+            "txt_output",
+            "txt_input",
+            "csv_output",
+            "image_archive",
+            "extract_output",
+            "replacement",
+            "rebuilt_tac",
+        ):
+            value = self.settings.get(key)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            candidate = Path(value).expanduser()
+            if candidate.is_dir():
+                return candidate
+            if candidate.parent.is_dir():
+                return candidate.parent
+        return Path.home()
+
+    def _save_settings(self) -> None:
+        variables = {
+            "csv_source": self.csv_source_var,
+            "txt_output": self.txt_output_var,
+            "txt_input": self.txt_input_var,
+            "csv_output": self.csv_output_var,
+            "image_archive": self.image_archive_var,
+            "extract_output": self.extract_output_var,
+            "replacement": self.replacement_var,
+            "rebuilt_tac": self.rebuilt_tac_var,
+        }
+        data = {key: variable.get().strip() for key, variable in variables.items()}
+        data.update(
+            {
+                "prefill_translation": bool(self.prefill_var.get()),
+                "encoding": self.encoding_var.get(),
+                "images_only": bool(self.images_only_var.get()),
+                "strict_dimensions": bool(self.strict_dimensions_var.get()),
+            }
+        )
+        try:
+            self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.settings_file.with_suffix(".tmp")
+            temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temporary, self.settings_file)
+            self.settings = data
+        except OSError:
+            # A settings failure must never block translation or extraction.
+            pass
 
     def _configure_style(self) -> None:
         style = ttk.Style(self)
@@ -116,7 +194,7 @@ class TanukiToolsApp(tk.Tk):
     def _build_dialogue_tab(self, parent) -> None:
         source_box = ttk.LabelFrame(parent, text="1. Choisir les CSV", style="Section.TLabelframe", padding=10)
         source_box.pack(fill="x")
-        self.csv_source_var = tk.StringVar(value=str(self.base_folder / "datascn.tac"))
+        self.csv_source_var = tk.StringVar(value=self._saved_path("csv_source"))
         row = ttk.Frame(source_box)
         row.pack(fill="x")
         ttk.Entry(row, textvariable=self.csv_source_var).pack(side="left", fill="x", expand=True)
@@ -167,9 +245,9 @@ class TanukiToolsApp(tk.Tk):
             action_area, text="2. Exporter vers des TXT", style="Section.TLabelframe", padding=10
         )
         export_box.pack(side="left", fill="both", expand=True, padx=(0, 5))
-        self.txt_output_var = tk.StringVar(value=str(self.base_folder / "traduction_txt"))
+        self.txt_output_var = tk.StringVar(value=self._saved_path("txt_output"))
         self._path_row(export_box, self.txt_output_var, lambda: self._choose_dir(self.txt_output_var))
-        self.prefill_var = tk.BooleanVar(value=True)
+        self.prefill_var = tk.BooleanVar(value=bool(self.settings.get("prefill_translation", True)))
         ttk.Checkbutton(
             export_box,
             text="Préremplir la traduction avec le texte source",
@@ -183,11 +261,14 @@ class TanukiToolsApp(tk.Tk):
             action_area, text="3. Réimporter les traductions", style="Section.TLabelframe", padding=10
         )
         import_box.pack(side="left", fill="both", expand=True, padx=(5, 0))
-        self.txt_input_var = tk.StringVar(value=str(self.base_folder / "traduction_txt"))
-        self.csv_output_var = tk.StringVar(value=str(self.base_folder / "datascn_fr.tac"))
+        self.txt_input_var = tk.StringVar(value=self._saved_path("txt_input"))
+        self.csv_output_var = tk.StringVar(value=self._saved_path("csv_output"))
         self._path_row(import_box, self.txt_input_var, lambda: self._choose_dir(self.txt_input_var))
         self._path_row(import_box, self.csv_output_var, lambda: self._choose_dir(self.csv_output_var))
-        self.encoding_var = tk.StringVar(value="Compatible jeu — CP932, accents simplifiés")
+        saved_encoding = self.settings.get("encoding", "Compatible jeu — CP932, accents simplifiés")
+        self.encoding_var = tk.StringVar(
+            value=saved_encoding if isinstance(saved_encoding, str) else "Compatible jeu — CP932, accents simplifiés"
+        )
         encoding = ttk.Combobox(
             import_box,
             textvariable=self.encoding_var,
@@ -206,7 +287,7 @@ class TanukiToolsApp(tk.Tk):
     def _build_image_tab(self, parent) -> None:
         archive_box = ttk.LabelFrame(parent, text="1. Archive d'images", style="Section.TLabelframe", padding=10)
         archive_box.pack(fill="x")
-        self.image_archive_var = tk.StringVar(value=str(self.base_folder / "datapic.tac"))
+        self.image_archive_var = tk.StringVar(value=self._saved_path("image_archive"))
         row = ttk.Frame(archive_box)
         row.pack(fill="x")
         ttk.Entry(row, textvariable=self.image_archive_var).pack(side="left", fill="x", expand=True)
@@ -232,9 +313,9 @@ class TanukiToolsApp(tk.Tk):
             action_area, text="2. Extraire", style="Section.TLabelframe", padding=10
         )
         extract_box.pack(side="left", fill="both", expand=True, padx=(0, 5))
-        self.extract_output_var = tk.StringVar(value=str(self.base_folder / "datapic_extracted"))
+        self.extract_output_var = tk.StringVar(value=self._saved_path("extract_output"))
         self._path_row(extract_box, self.extract_output_var, lambda: self._choose_dir(self.extract_output_var))
-        self.images_only_var = tk.BooleanVar(value=True)
+        self.images_only_var = tk.BooleanVar(value=bool(self.settings.get("images_only", True)))
         ttk.Checkbutton(extract_box, text="Images uniquement (PNG/JPG)", variable=self.images_only_var).pack(
             anchor="w", pady=(5, 7)
         )
@@ -246,14 +327,14 @@ class TanukiToolsApp(tk.Tk):
             action_area, text="3. Réinsérer et reconstruire", style="Section.TLabelframe", padding=10
         )
         rebuild_box.pack(side="left", fill="both", expand=True, padx=(5, 0))
-        self.replacement_var = tk.StringVar(value=str(self.base_folder / "datapic_extracted"))
-        self.rebuilt_tac_var = tk.StringVar(value=str(self.base_folder / "datapic_fr.tac"))
+        self.replacement_var = tk.StringVar(value=self._saved_path("replacement"))
+        self.rebuilt_tac_var = tk.StringVar(value=self._saved_path("rebuilt_tac"))
         self._path_row(rebuild_box, self.replacement_var, lambda: self._choose_dir(self.replacement_var))
         row = ttk.Frame(rebuild_box)
         row.pack(fill="x", pady=3)
         ttk.Entry(row, textvariable=self.rebuilt_tac_var).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="Parcourir…", command=self._choose_output_tac).pack(side="left", padx=(6, 0))
-        self.strict_dimensions_var = tk.BooleanVar(value=True)
+        self.strict_dimensions_var = tk.BooleanVar(value=bool(self.settings.get("strict_dimensions", True)))
         ttk.Checkbutton(
             rebuild_box,
             text="Exiger les mêmes dimensions",
@@ -267,16 +348,26 @@ class TanukiToolsApp(tk.Tk):
         ).pack(anchor="e")
 
     def _choose_dir(self, variable: tk.StringVar) -> None:
-        initial = Path(variable.get())
-        if not initial.is_dir():
-            initial = initial.parent
-        chosen = filedialog.askdirectory(initialdir=str(initial if initial.exists() else self.base_folder))
+        chosen = filedialog.askdirectory(initialdir=str(self._initial_directory(variable)))
         if chosen:
             variable.set(chosen)
+            self.base_folder = Path(chosen)
+            self._save_settings()
+
+    def _initial_directory(self, variable: tk.StringVar) -> Path:
+        value = variable.get().strip()
+        if value:
+            candidate = Path(value).expanduser()
+            if candidate.is_dir():
+                return candidate
+            if candidate.parent.is_dir():
+                return candidate.parent
+        return self.base_folder if self.base_folder.is_dir() else Path.home()
 
     def _choose_tac(self) -> None:
         chosen = filedialog.askopenfilename(
-            initialdir=str(self.base_folder), filetypes=(("Archives TAC", "*.tac"), ("Tous les fichiers", "*.*"))
+            initialdir=str(self._initial_directory(self.image_archive_var)),
+            filetypes=(("Archives TAC", "*.tac"), ("Tous les fichiers", "*.*")),
         )
         if chosen:
             self.image_archive_var.set(chosen)
@@ -285,16 +376,21 @@ class TanukiToolsApp(tk.Tk):
             self.replacement_var.set(str(path.with_name(path.stem + "_extracted")))
             self.rebuilt_tac_var.set(str(path.with_name(path.stem + "_fr.tac")))
             self.archive = None
+            self.base_folder = path.parent
+            self._save_settings()
 
     def _choose_output_tac(self) -> None:
+        current = self.rebuilt_tac_var.get().strip()
         chosen = filedialog.asksaveasfilename(
-            initialdir=str(Path(self.rebuilt_tac_var.get()).parent),
-            initialfile=Path(self.rebuilt_tac_var.get()).name,
+            initialdir=str(self._initial_directory(self.rebuilt_tac_var)),
+            initialfile=Path(current).name if current else "",
             defaultextension=".tac",
             filetypes=(("Archives TAC", "*.tac"),),
         )
         if chosen:
             self.rebuilt_tac_var.set(chosen)
+            self.base_folder = Path(chosen).parent
+            self._save_settings()
 
     def _write_log(self, message: str) -> None:
         self.log.configure(state="normal")
@@ -303,6 +399,7 @@ class TanukiToolsApp(tk.Tk):
         self.log.configure(state="disabled")
 
     def analyse_csv(self) -> None:
+        self._save_settings()
         try:
             self.script_infos = discover_scripts(self.csv_source_var.get())
         except Exception as exc:
@@ -330,6 +427,7 @@ class TanukiToolsApp(tk.Tk):
         self.csv_tree.selection_set(self.csv_tree.get_children())
 
     def export_txt(self) -> None:
+        self._save_settings()
         selected = list(self.csv_tree.selection())
         source = self.csv_source_var.get()
         output = self.txt_output_var.get()
@@ -348,6 +446,7 @@ class TanukiToolsApp(tk.Tk):
         )
 
     def import_txt(self) -> None:
+        self._save_settings()
         modes = {
             "Compatible jeu — CP932, accents simplifiés": "cp932_safe",
             "CP932 strict — erreur sur les accents": "cp932_strict",
@@ -372,6 +471,7 @@ class TanukiToolsApp(tk.Tk):
         )
 
     def analyse_tac(self) -> None:
+        self._save_settings()
         archive_path = self.image_archive_var.get()
 
         def work():
@@ -398,6 +498,7 @@ class TanukiToolsApp(tk.Tk):
         self.events.put(("progress", current, total, name))
 
     def extract_images(self) -> None:
+        self._save_settings()
         destination = Path(self.extract_output_var.get())
         if destination.exists() and any(destination.iterdir()):
             if not messagebox.askyesno(
@@ -432,6 +533,7 @@ class TanukiToolsApp(tk.Tk):
         )
 
     def rebuild_tac(self) -> None:
+        self._save_settings()
         output = Path(self.rebuilt_tac_var.get())
         if output.exists() and not messagebox.askyesno(APP_TITLE, f"Remplacer le fichier de sortie existant ?\n{output}"):
             return
@@ -525,6 +627,7 @@ class TanukiToolsApp(tk.Tk):
             if not messagebox.askyesno(APP_TITLE, "Une opération est en cours. L'annuler et fermer ?"):
                 return
             self.cancel_event.set()
+        self._save_settings()
         self.destroy()
 
 

@@ -30,6 +30,8 @@ Le projet est actuellement en phase alpha et a été développé puis testé ave
 2. Le placer près des fichiers du jeu ou le lancer depuis n'importe quel dossier.
 3. Sélectionner le dossier CSV ou l'archive `.tac` dans l'interface.
 
+Au premier lancement, les champs de chemins sont vides. Les derniers chemins choisis sont ensuite mémorisés uniquement sur la machine locale dans `%APPDATA%\TanukiTools\settings.json`. Ce fichier n'est jamais placé dans le dépôt.
+
 ### Traduire les dialogues
 
 1. Choisir le dossier `datascn.tac` contenant les CSV.
@@ -91,11 +93,17 @@ python -m unittest discover -s tests -v
 
 ## Construire l'exécutable
 
+La méthode la plus simple consiste à double-cliquer sur `build.cmd`. Le script installe automatiquement les dépendances de compilation dans un dossier temporaire.
+
+Depuis PowerShell :
+
 ```powershell
+cd C:\chemin\vers\Tanuki_Tools
+Set-ExecutionPolicy -Scope Process Bypass
 .\build.ps1
 ```
 
-Le résultat est créé dans `dist\TanukiTools.exe`. Le dossier `dist` et les fichiers de jeux sont exclus de Git.
+Python doit être accessible avec la commande `python`. Le résultat est créé dans `dist\TanukiTools.exe`. Le dossier `dist` et les fichiers de jeux sont exclus de Git.
 
 ## Structure du dépôt
 
