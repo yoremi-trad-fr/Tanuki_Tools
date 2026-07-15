@@ -2,7 +2,6 @@
 
 Application Windows pour traduire les scripts CSV et manipuler les archives d'images `TArc1.10` de jeux utilisant le moteur TanukiSoft.
 
-Le projet est actuellement en phase alpha et a été développé puis testé avec **Shoujo Ramune**. Les archives originales ne sont jamais écrasées.
 
 ## Fonctionnalités
 
